@@ -304,7 +304,7 @@ function handleAction(state, playerId, action, targetId) {
         eligibleIds,
       },
     };
-    return pushLog(next, `${actor.name} declarou ${info.label.toLowerCase()}.`);
+    return pushLog(next, describeActionClaim(next, ctx, info.role));
   }
   return beginBlockOrResolve(pushLog(next, `${actor.name} usou ${info.label.toLowerCase()}.`), ctx);
 }
@@ -360,7 +360,7 @@ function handleBlock(state, playerId, role) {
       eligibleIds,
     },
   };
-  return pushLog(next, `${blocker.name} bloqueou com ${roleLabel(role)}.`);
+  return pushLog(next, describeBlockClaim(next, playerId, role, state.pending.actionCtx));
 }
 
 function handleReveal(state, playerId, cardId) {
@@ -546,14 +546,22 @@ function resolveActionChallenge(state, challengerId) {
   if (!actor) return { ...state, pending: null };
   if (playerHasRole(actor, pending.role)) {
     let next = replaceClaimedRole({ ...state, pending: null }, actor.id, pending.role);
-    next = pushLog(next, `${actor.name} provou ${roleLabel(pending.role)}.`);
-    return beginReveal(next, challengerId, `desafio em ${ACTION_INFO[pending.actionCtx.action].label.toLowerCase()}`, {
+    next = pushLog(next, `${actor.name} mostrou ${roleLabel(pending.role)} e trocou essa carta com o monte.`);
+    return beginReveal(next, challengerId, {
+      promptTitle: `${actor.name} mostrou que tem ${roleLabel(pending.role)}. Você perdeu o desafio e precisa descartar uma das suas influências. Escolha qual descartar.`,
+      bannerText: `${playerLabel(next, challengerId)} perdeu o desafio para ${actor.name} e precisa descartar 1 influência.`,
+      discardText: `${playerLabel(next, challengerId)} perdeu o desafio para ${actor.name}.`,
+    }, {
       type: "after_claim_proved",
       actionCtx: pending.actionCtx,
     });
   }
-  let next = pushLog({ ...state, pending: null }, `${actor.name} blefou.`);
-  return beginReveal(next, actor.id, `blefe em ${ACTION_INFO[pending.actionCtx.action].label.toLowerCase()}`, {
+  let next = pushLog({ ...state, pending: null }, `${actor.name} blefou sobre ${roleLabel(pending.role)}.`);
+  return beginReveal(next, actor.id, {
+    promptTitle: `Seu blefe de ${roleLabel(pending.role)} foi pego. Escolha qual influência descartar.`,
+    bannerText: `${actor.name} blefou sobre ${roleLabel(pending.role)} e precisa descartar 1 influência.`,
+    discardText: `${actor.name} perdeu o desafio por blefar sobre ${roleLabel(pending.role)}.`,
+  }, {
     type: "end_turn",
   });
 }
@@ -565,13 +573,21 @@ function resolveBlockChallenge(state, challengerId) {
   if (!blocker) return { ...state, pending: null };
   if (playerHasRole(blocker, pending.role)) {
     let next = replaceClaimedRole({ ...state, pending: null }, blocker.id, pending.role);
-    next = pushLog(next, `${blocker.name} provou ${roleLabel(pending.role)}.`);
-    return beginReveal(next, challengerId, `desafio ao bloqueio`, {
+    next = pushLog(next, `${blocker.name} mostrou ${roleLabel(pending.role)} e trocou essa carta com o monte.`);
+    return beginReveal(next, challengerId, {
+      promptTitle: `${blocker.name} mostrou que tem ${roleLabel(pending.role)} para bloquear. Você perdeu o desafio e precisa descartar uma das suas influências. Escolha qual descartar.`,
+      bannerText: `${playerLabel(next, challengerId)} perdeu o desafio ao bloqueio de ${blocker.name} e precisa descartar 1 influência.`,
+      discardText: `${playerLabel(next, challengerId)} perdeu o desafio ao bloqueio de ${blocker.name}.`,
+    }, {
       type: "end_turn",
     });
   }
-  let next = pushLog({ ...state, pending: null }, `${blocker.name} blefou no bloqueio.`);
-  return beginReveal(next, blocker.id, `blefe no bloqueio`, {
+  let next = pushLog({ ...state, pending: null }, `${blocker.name} blefou no bloqueio com ${roleLabel(pending.role)}.`);
+  return beginReveal(next, blocker.id, {
+    promptTitle: `Seu bloqueio com ${roleLabel(pending.role)} foi desafiado com sucesso. Escolha qual influência descartar.`,
+    bannerText: `${blocker.name} blefou no bloqueio com ${roleLabel(pending.role)} e precisa descartar 1 influência.`,
+    discardText: `${blocker.name} perdeu o desafio do bloqueio.`,
+  }, {
     type: "resolve_action",
     actionCtx: pending.actionCtx,
   });
@@ -625,7 +641,11 @@ function resolveActionEffect(state, actionCtx) {
       const target = state.players[actionCtx.targetId];
       if (!target || !target.inMatch || getHiddenCards(target).length === 0) return finishTurn(state);
       const next = pushLog(state, `${actor.name} tentou eliminar uma influência de ${target.name}.`);
-      return beginReveal(next, target.id, `axxaxinato`, { type: "end_turn" });
+      return beginReveal(next, target.id, {
+        promptTitle: `${actor.name} acertou o axxaxinato. Escolha qual influência descartar.`,
+        bannerText: `${target.name} precisa descartar 1 influência por axxaxinato.`,
+        discardText: `${target.name} perdeu uma influência por axxaxinato.`,
+      }, { type: "end_turn" });
     }
     case "exchange": {
       const drawn = state.deck.slice(0, 2);
@@ -646,7 +666,11 @@ function resolveActionEffect(state, actionCtx) {
       const target = state.players[actionCtx.targetId];
       if (!target || !target.inMatch || getHiddenCards(target).length === 0) return finishTurn(state);
       const next = pushLog(state, `${actor.name} aplicou golpe em ${target.name}.`);
-      return beginReveal(next, target.id, `golpe`, { type: "end_turn" });
+      return beginReveal(next, target.id, {
+        promptTitle: `${actor.name} aplicou um golpe. Escolha qual influência descartar.`,
+        bannerText: `${target.name} precisa descartar 1 influência por golpe.`,
+        discardText: `${target.name} perdeu uma influência por golpe.`,
+      }, { type: "end_turn" });
     }
     default:
       return state;
@@ -679,7 +703,10 @@ function applyRevealChoice(state, playerId, cardId, reason, continuation) {
   const nextPlayer = { ...player, hand };
   let next = withPlayer({ ...state, pending: null }, playerId, nextPlayer);
   const revealed = hand.find((card) => card.id === cardId);
-  next = pushLog(next, `${player.name} revelou ${revealed ? roleLabel(revealed.role) : "uma carta"} por ${reason}.`);
+  next = pushLog(
+    next,
+    `${reason?.discardText || `${player.name} perdeu uma influência.`} Descartou ${revealed ? roleLabel(revealed.role) : "uma carta"}.`,
+  );
   if (getHiddenCards(nextPlayer).length === 0) {
     next = pushLog(next, `${player.name} saiu da rodada.`);
   }
@@ -895,6 +922,41 @@ function roleLabel(role) {
 function playerLabel(state, playerId) {
   const player = state.players[playerId];
   return player ? player.name : "Jogador";
+}
+
+function describeActionEffect(state, actionCtx) {
+  const target = actionCtx.targetId ? state.players[actionCtx.targetId] : null;
+  switch (actionCtx.action) {
+    case "tax":
+      return "vai pegar 3 moedas";
+    case "steal":
+      return `vai roubar 2 moedas de ${target ? target.name : "alguém"}`;
+    case "assassinate":
+      return `vai gastar 3 moedas para eliminar uma influência de ${target ? target.name : "alguém"}`;
+    case "exchange":
+      return "vai trocar cartas com o monte";
+    default:
+      return `vai usar ${ACTION_INFO[actionCtx.action]?.label.toLowerCase() || "uma ação"}`;
+  }
+}
+
+function describeActionClaim(state, actionCtx, role) {
+  const actor = playerLabel(state, actionCtx.actorId);
+  return `${actor} declarou que tem ${roleLabel(role)} e ${describeActionEffect(state, actionCtx)}.`;
+}
+
+function describeBlockClaim(state, blockerId, role, actionCtx) {
+  const blocker = playerLabel(state, blockerId);
+  if (actionCtx.action === "foreign_aid") {
+    return `${blocker} declarou que tem ${roleLabel(role)} e vai bloquear a ajuda externa.`;
+  }
+  if (actionCtx.action === "steal") {
+    return `${blocker} declarou que tem ${roleLabel(role)} e vai bloquear o roubo.`;
+  }
+  if (actionCtx.action === "assassinate") {
+    return `${blocker} declarou que tem ${roleLabel(role)} e vai bloquear o axxaxinato.`;
+  }
+  return `${blocker} declarou que tem ${roleLabel(role)} e vai bloquear a ação.`;
 }
 
 function renderLoop() {
@@ -1198,11 +1260,9 @@ function renderResponsePrompt(state, me) {
   const pending = state.pending;
   if (!pending) return "";
   if (pending.type === "challenge_action" && pending.eligibleIds.includes(me.id)) {
-    const actor = state.players[pending.actionCtx.actorId];
-    const info = ACTION_INFO[pending.actionCtx.action];
     return `
       <div class="prompt">
-        <strong>${escapeHtml(actor.name)} declarou ${escapeHtml(info.label.toLowerCase())}</strong>
+        <strong>${escapeHtml(describeActionClaim(state, pending.actionCtx, pending.role))}</strong>
         <div class="choice-list">
           <button data-action="challenge">Desafiar</button>
           <button class="secondary" data-action="pass">Passar</button>
@@ -1231,10 +1291,9 @@ function renderResponsePrompt(state, me) {
     `;
   }
   if (pending.type === "challenge_block" && pending.eligibleIds.includes(me.id)) {
-    const blocker = state.players[pending.blockerId];
     return `
       <div class="prompt">
-        <strong>${escapeHtml(blocker.name)} bloqueou com ${escapeHtml(roleLabel(pending.role))}</strong>
+        <strong>${escapeHtml(describeBlockClaim(state, pending.blockerId, pending.role, pending.actionCtx))}</strong>
         <div class="choice-list">
           <button data-action="challenge">Desafiar bloqueio</button>
           <button class="secondary" data-action="pass">Passar</button>
@@ -1246,7 +1305,7 @@ function renderResponsePrompt(state, me) {
     const player = state.players[me.id];
     return `
       <div class="prompt">
-        <strong>Escolha qual influência revelar</strong>
+        <strong>${escapeHtml(pending.reason?.promptTitle || "Escolha qual influência descartar.")}</strong>
         <div class="choice-list">
           ${getHiddenCards(player)
             .map(
@@ -1301,20 +1360,19 @@ function phaseText(state) {
 function getPromptText(state, myId) {
   if (state.phase !== "in_game") return "Esperando a rodada começar.";
   if (state.pending?.type === "reveal") {
-    return `${playerLabel(state, state.pending.playerId)} precisa revelar uma influência.`;
+    return state.pending.reason?.bannerText || `${playerLabel(state, state.pending.playerId)} precisa descartar 1 influência.`;
   }
   if (state.pending?.type === "exchange") {
     return `${playerLabel(state, state.pending.playerId)} está escolhendo cartas.`;
   }
   if (state.pending?.type === "challenge_action") {
-    const actor = playerLabel(state, state.pending.actionCtx.actorId);
-    return `${actor} declarou ${ACTION_INFO[state.pending.actionCtx.action].label.toLowerCase()}.`;
+    return describeActionClaim(state, state.pending.actionCtx, state.pending.role);
   }
   if (state.pending?.type === "block_choice") {
     return `Janela de bloqueio aberta.`;
   }
   if (state.pending?.type === "challenge_block") {
-    return `Janela de desafio ao bloqueio.`;
+    return describeBlockClaim(state, state.pending.blockerId, state.pending.role, state.pending.actionCtx);
   }
   if (state.currentPlayerId === myId) return "Seu turno.";
   return `Turno de ${playerLabel(state, state.currentPlayerId)}.`;
