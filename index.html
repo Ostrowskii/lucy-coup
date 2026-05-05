@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Lucy Coup</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      window.addEventListener("error", function (event) {
+        var root = document.getElementById("app");
+        if (!root) return;
+        root.innerHTML =
+          '<section style="max-width:420px;margin:24px auto;padding:16px;border-radius:18px;background:#fff4ec;border:1px solid rgba(90,40,20,.15);font-family:Arial,sans-serif;color:#3b2414"><strong>Erro ao abrir o jogo.</strong><p style="margin-bottom:0">' +
+          String(event.message || "erro desconhecido") +
+          "</p></section>";
+      });
+      window.addEventListener("unhandledrejection", function (event) {
+        var root = document.getElementById("app");
+        if (!root) return;
+        root.innerHTML =
+          '<section style="max-width:420px;margin:24px auto;padding:16px;border-radius:18px;background:#fff4ec;border:1px solid rgba(90,40,20,.15);font-family:Arial,sans-serif;color:#3b2414"><strong>Erro ao abrir o jogo.</strong><p style="margin-bottom:0">' +
+          String(event.reason && event.reason.message ? event.reason.message : event.reason || "rejeicao desconhecida") +
+          "</p></section>";
+      });
+    </script>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>
