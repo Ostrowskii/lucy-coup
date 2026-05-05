@@ -100,6 +100,18 @@ const POST_PACKER = {
         cardId: { $: "Nat" },
       },
     },
+    show_claimed_role: {
+      $: "Struct",
+      fields: {
+        playerId: { $: "String" },
+      },
+    },
+    confirm_revealed: {
+      $: "Struct",
+      fields: {
+        playerId: { $: "String" },
+      },
+    },
     exchange: {
       $: "Struct",
       fields: {
@@ -212,6 +224,10 @@ function on_post(post, state) {
       return handleBlock(state, post.playerId, post.role);
     case "reveal":
       return handleReveal(state, post.playerId, post.cardId);
+    case "show_claimed_role":
+      return handleShowClaimedRole(state, post.playerId);
+    case "confirm_revealed":
+      return handleConfirmRevealed(state, post.playerId);
     case "exchange":
       return handleExchange(state, post.playerId, post.keepA, post.keepB);
     case "investigate_decision":
@@ -380,7 +396,65 @@ function handleBlock(state, playerId, role) {
 
 function handleReveal(state, playerId, cardId) {
   if (!state.pending || state.pending.type !== "reveal" || state.pending.playerId !== playerId) return state;
-  return applyRevealChoice(state, playerId, cardId, state.pending.reason, state.pending.continuation);
+  const player = state.players[playerId];
+  const card = player?.hand.find((entry) => !entry.revealed && entry.id === cardId);
+  if (!card) return state;
+  return {
+    ...state,
+    pending: {
+      type: "discard_revealed",
+      playerId,
+      cardId,
+      role: card.role,
+      reason: state.pending.reason,
+      continuation: state.pending.continuation,
+    },
+  };
+}
+
+function handleShowClaimedRole(state, playerId) {
+  if (!state.pending || state.pending.type !== "claim_proof" || state.pending.playerId !== playerId) return state;
+  const player = state.players[playerId];
+  const card = player?.hand.find((entry) => !entry.revealed && entry.role === state.pending.role);
+  if (!player || !card) return { ...state, pending: null };
+  return pushLog(
+    {
+      ...state,
+      pending: {
+        type: "claim_replace",
+        playerId,
+        role: state.pending.role,
+        cardId: card.id,
+        challengerId: state.pending.challengerId,
+        continuation: state.pending.continuation,
+      },
+    },
+    `${player.name} mostrou ${roleLabel(state.pending.role)}.`,
+  );
+}
+
+function handleConfirmRevealed(state, playerId) {
+  if (!state.pending) return state;
+  if (state.pending.type === "claim_replace" && state.pending.playerId === playerId) {
+    const player = state.players[playerId];
+    if (!player) return { ...state, pending: null };
+    let next = replaceSpecificCard({ ...state, pending: null }, playerId, state.pending.cardId);
+    next = pushLog(next, `${player.name} devolveu ${roleLabel(state.pending.role)} ao monte e comprou uma carta nova.`);
+    return beginReveal(
+      next,
+      state.pending.challengerId,
+      {
+        promptTitle: `${player.name} mostrou que tinha ${roleLabel(state.pending.role)}. Você perdeu o desafio. Escolha qual influência revelar para descartar.`,
+        bannerText: `${playerLabel(next, state.pending.challengerId)} perdeu o desafio para ${player.name} e precisa revelar 1 influência.`,
+        discardText: `${playerLabel(next, state.pending.challengerId)} perdeu o desafio para ${player.name}.`,
+      },
+      state.pending.continuation,
+    );
+  }
+  if (state.pending.type === "discard_revealed" && state.pending.playerId === playerId) {
+    return applyDiscardChoice(state, playerId, state.pending.cardId, state.pending.reason, state.pending.continuation);
+  }
+  return state;
 }
 
 function handleExchange(state, playerId, keepA, keepB) {
@@ -511,12 +585,36 @@ function maybeResolvePending(state) {
     }
     return { ...state, pending };
   }
+  if (state.pending.type === "claim_proof") {
+    const player = state.players[state.pending.playerId];
+    if (!player) return resolveContinuation({ ...state, pending: null }, state.pending.continuation);
+    if (!player.connected) {
+      return handleShowClaimedRole(state, player.id);
+    }
+  }
+  if (state.pending.type === "claim_replace") {
+    const player = state.players[state.pending.playerId];
+    if (!player) return resolveContinuation({ ...state, pending: null }, state.pending.continuation);
+    if (!player.connected) {
+      return handleConfirmRevealed(state, player.id);
+    }
+  }
   if (state.pending.type === "reveal") {
     const player = state.players[state.pending.playerId];
-    if (!player) return { ...state, pending: null };
+    if (!player) return resolveContinuation({ ...state, pending: null }, state.pending.continuation);
     const hidden = getHiddenCards(player);
-    if (hidden.length <= 1 || !player.connected) {
-      return applyRevealChoice(state, player.id, hidden[0]?.id, state.pending.reason, state.pending.continuation);
+    if (hidden.length === 0) {
+      return resolveContinuation({ ...state, pending: null }, state.pending.continuation);
+    }
+    if (!player.connected) {
+      return handleReveal(state, player.id, hidden[0].id);
+    }
+  }
+  if (state.pending.type === "discard_revealed") {
+    const player = state.players[state.pending.playerId];
+    if (!player) return resolveContinuation({ ...state, pending: null }, state.pending.continuation);
+    if (!player.connected) {
+      return handleConfirmRevealed(state, player.id);
     }
   }
   if (state.pending.type === "exchange") {
@@ -580,24 +678,27 @@ function resolveActionChallenge(state, challengerId) {
   const challenger = state.players[challengerId];
   if (!actor) return { ...state, pending: null };
   if (playerHasRole(actor, pending.role)) {
-    let next = replaceClaimedRole({ ...state, pending: null }, actor.id, pending.role);
-    next = pushLog(next, `${actor.name} mostrou ${roleLabel(pending.role)} e trocou essa carta com o monte.`);
-    return beginReveal(next, challengerId, {
-      promptTitle: `${actor.name} mostrou que tem ${roleLabel(pending.role)}. Você perdeu o desafio e precisa descartar uma das suas influências. Escolha qual descartar.`,
-      bannerText: `${playerLabel(next, challengerId)} perdeu o desafio para ${actor.name} e precisa descartar 1 influência.`,
-      discardText: `${playerLabel(next, challengerId)} perdeu o desafio para ${actor.name}.`,
-    }, {
-      type: "after_claim_proved",
-      actionCtx: pending.actionCtx,
-    });
+    return {
+      ...state,
+      pending: {
+        type: "claim_proof",
+        playerId: actor.id,
+        role: pending.role,
+        challengerId,
+        continuation: {
+          type: "after_claim_proved",
+          actionCtx: pending.actionCtx,
+        },
+      },
+    };
   }
   let next = pushLog(
     { ...state, pending: null },
     `${actor.name} blefou que tinha ${roleLabel(pending.role)} e ${challenger ? challenger.name : "alguém"} pegou a mentira.`,
   );
   return beginReveal(next, actor.id, {
-    promptTitle: `Você blefou que tinha ${roleLabel(pending.role)} e ${challenger ? challenger.name : "alguém"} duvidou de você. Escolha qual influência descartar.`,
-    bannerText: `${actor.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira. Precisa descartar 1 influência.`,
+    promptTitle: `Você blefou que tinha ${roleLabel(pending.role)} e ${challenger ? challenger.name : "alguém"} duvidou de você. Escolha qual influência revelar para descartar.`,
+    bannerText: `${actor.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira. Precisa revelar 1 influência.`,
     discardText: `${actor.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira.`,
   }, {
     type: "end_turn",
@@ -611,23 +712,26 @@ function resolveBlockChallenge(state, challengerId) {
   const challenger = state.players[challengerId];
   if (!blocker) return { ...state, pending: null };
   if (playerHasRole(blocker, pending.role)) {
-    let next = replaceClaimedRole({ ...state, pending: null }, blocker.id, pending.role);
-    next = pushLog(next, `${blocker.name} mostrou ${roleLabel(pending.role)} e trocou essa carta com o monte.`);
-    return beginReveal(next, challengerId, {
-      promptTitle: `${blocker.name} mostrou que tem ${roleLabel(pending.role)} para bloquear. Você perdeu o desafio e precisa descartar uma das suas influências. Escolha qual descartar.`,
-      bannerText: `${playerLabel(next, challengerId)} perdeu o desafio ao bloqueio de ${blocker.name} e precisa descartar 1 influência.`,
-      discardText: `${playerLabel(next, challengerId)} perdeu o desafio ao bloqueio de ${blocker.name}.`,
-    }, {
-      type: "end_turn",
-    });
+    return {
+      ...state,
+      pending: {
+        type: "claim_proof",
+        playerId: blocker.id,
+        role: pending.role,
+        challengerId,
+        continuation: {
+          type: "end_turn",
+        },
+      },
+    };
   }
   let next = pushLog(
     { ...state, pending: null },
     `${blocker.name} blefou que tinha ${roleLabel(pending.role)} para bloquear e ${challenger ? challenger.name : "alguém"} pegou a mentira.`,
   );
   return beginReveal(next, blocker.id, {
-    promptTitle: `Você blefou que tinha ${roleLabel(pending.role)} e ${challenger ? challenger.name : "alguém"} duvidou de você. Escolha qual influência descartar.`,
-    bannerText: `${blocker.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira. Precisa descartar 1 influência.`,
+    promptTitle: `Você blefou que tinha ${roleLabel(pending.role)} e ${challenger ? challenger.name : "alguém"} duvidou de você. Escolha qual influência revelar para descartar.`,
+    bannerText: `${blocker.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira. Precisa revelar 1 influência.`,
     discardText: `${blocker.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira.`,
   }, {
     type: "resolve_action",
@@ -684,9 +788,9 @@ function resolveActionEffect(state, actionCtx) {
       if (!target || !target.inMatch || getHiddenCards(target).length === 0) return finishTurn(state);
       const next = pushLog(state, `${actor.name} tentou eliminar uma influência de ${target.name}.`);
       return beginReveal(next, target.id, {
-        promptTitle: `${actor.name} acertou o axxaxinato. Escolha qual influência descartar.`,
-        bannerText: `${target.name} precisa descartar 1 influência por axxaxinato.`,
-        discardText: `${target.name} perdeu uma influência por axxaxinato.`,
+        promptTitle: `${actor.name} acertou o assassinato. Escolha qual influência revelar para descartar.`,
+        bannerText: `${target.name} precisa revelar 1 influência por assassinato.`,
+        discardText: `${target.name} perdeu uma influência por assassinato.`,
       }, { type: "end_turn" });
     }
     case "exchange": {
@@ -724,8 +828,8 @@ function resolveActionEffect(state, actionCtx) {
       if (!target || !target.inMatch || getHiddenCards(target).length === 0) return finishTurn(state);
       const next = pushLog(state, `${actor.name} aplicou golpe em ${target.name}.`);
       return beginReveal(next, target.id, {
-        promptTitle: `${actor.name} aplicou um golpe. Escolha qual influência descartar.`,
-        bannerText: `${target.name} precisa descartar 1 influência por golpe.`,
+        promptTitle: `${actor.name} aplicou um golpe. Escolha qual influência revelar para descartar.`,
+        bannerText: `${target.name} precisa revelar 1 influência por golpe.`,
         discardText: `${target.name} perdeu uma influência por golpe.`,
       }, { type: "end_turn" });
     }
@@ -739,8 +843,8 @@ function beginReveal(state, playerId, reason, continuation) {
   if (!player) return resolveContinuation(state, continuation);
   const hidden = getHiddenCards(player);
   if (hidden.length === 0) return resolveContinuation(state, continuation);
-  if (hidden.length === 1 || !player.connected) {
-    return applyRevealChoice(state, playerId, hidden[0].id, reason, continuation);
+  if (!player.connected) {
+    return applyDiscardChoice({ ...state, pending: null }, playerId, hidden[0].id, reason, continuation);
   }
   return {
     ...state,
@@ -753,7 +857,7 @@ function beginReveal(state, playerId, reason, continuation) {
   };
 }
 
-function applyRevealChoice(state, playerId, cardId, reason, continuation) {
+function applyDiscardChoice(state, playerId, cardId, reason, continuation) {
   const player = state.players[playerId];
   if (!player) return resolveContinuation({ ...state, pending: null }, continuation);
   const hand = player.hand.map((card) => (card.id === cardId ? { ...card, revealed: true } : card));
@@ -795,29 +899,11 @@ function finishTurn(state, keepCurrent = false) {
   return next;
 }
 
-function replaceClaimedRole(state, playerId, role) {
-  const player = state.players[playerId];
-  if (!player) return state;
-  const hand = [...player.hand];
-  const index = hand.findIndex((card) => !card.revealed && card.role === role);
-  if (index === -1) return state;
-  let deck = [...state.deck];
-  let rngCounter = state.rngCounter;
-  const returned = { ...hand[index], revealed: false };
-  const inserted = insertAtRandom(deck, returned, state.seed, rngCounter);
-  deck = inserted.deck;
-  rngCounter = inserted.rngCounter;
-  const replacement = deck[0];
-  hand[index] = { ...replacement, revealed: false };
-  deck = deck.slice(1);
-  return withPlayer({ ...state, deck, rngCounter }, playerId, { ...player, hand });
-}
-
 function replaceSpecificCard(state, playerId, cardId) {
   const player = state.players[playerId];
   if (!player) return state;
   const hand = [...player.hand];
-  const index = hand.findIndex((card) => !card.revealed && card.id === cardId);
+  const index = hand.findIndex((card) => card.id === cardId);
   if (index === -1) return state;
   let deck = [...state.deck];
   let rngCounter = state.rngCounter;
@@ -1043,7 +1129,7 @@ function describeBlockClaim(state, blockerId, role, actionCtx) {
     return `${blocker} declarou que tem ${roleLabel(role)} e vai bloquear o roubo.`;
   }
   if (actionCtx.action === "assassinate") {
-    return `${blocker} declarou que tem ${roleLabel(role)} e vai bloquear o axxaxinato.`;
+    return `${blocker} declarou que tem ${roleLabel(role)} e vai bloquear o assassinato.`;
   }
   return `${blocker} declarou que tem ${roleLabel(role)} e vai bloquear a ação.`;
 }
@@ -1263,11 +1349,12 @@ function renderPlayerCard(player, state, myId, compact = false) {
 function renderActionPanel(state, me) {
   const actionPrompt = renderActionPrompt(state, me);
   const responsePrompt = renderResponsePrompt(state, me);
+  const pendingNotice = renderPendingNotice(state, me);
   const actionLog = renderActionLog(state);
   return `
     <section class="panel">
       <div class="section-title">Ações</div>
-      ${responsePrompt || actionPrompt || `<div class="empty">Vez de ${escapeHtml(playerLabel(state, state.currentPlayerId))}</div>`}
+      ${responsePrompt || actionPrompt || pendingNotice || `<div class="empty">Vez de ${escapeHtml(playerLabel(state, state.currentPlayerId))}</div>`}
       ${actionLog}
     </section>
   `;
@@ -1440,11 +1527,32 @@ function renderResponsePrompt(state, me) {
       </div>
     `;
   }
+  if (pending.type === "claim_proof" && pending.playerId === me.id) {
+    return `
+      <div class="prompt">
+        <strong>${escapeHtml(`${playerLabel(state, pending.challengerId)} duvidou de você. Mostre a carta ${roleLabel(pending.role)}.`)}</strong>
+        <div class="choice-list">
+          <button data-action="show-claimed-role">Mostrar carta ${escapeHtml(roleLabel(pending.role))}</button>
+        </div>
+      </div>
+    `;
+  }
+  if (pending.type === "claim_replace" && pending.playerId === me.id) {
+    return `
+      <div class="prompt">
+        <strong>${escapeHtml(`Todos viram seu ${roleLabel(pending.role)}. Agora compre uma carta nova.`)}</strong>
+        ${renderShownCard(pending.role, `Carta mostrada: ${roleLabel(pending.role)}`)}
+        <div class="choice-list">
+          <button data-action="confirm-revealed">Comprar carta nova</button>
+        </div>
+      </div>
+    `;
+  }
   if (pending.type === "reveal" && pending.playerId === me.id) {
     const player = state.players[me.id];
     return `
       <div class="prompt">
-        <strong>${escapeHtml(pending.reason?.promptTitle || "Escolha qual influência descartar.")}</strong>
+        <strong>${escapeHtml(pending.reason?.promptTitle || "Escolha qual influência revelar para descartar.")}</strong>
         <div class="choice-list">
           ${getHiddenCards(player)
             .map(
@@ -1455,6 +1563,17 @@ function renderResponsePrompt(state, me) {
               `,
             )
             .join("")}
+        </div>
+      </div>
+    `;
+  }
+  if (pending.type === "discard_revealed" && pending.playerId === me.id) {
+    return `
+      <div class="prompt">
+        <strong>${escapeHtml(`Você revelou ${roleLabel(pending.role)}. Agora descarte essa carta.`)}</strong>
+        ${renderShownCard(pending.role, `Carta revelada: ${roleLabel(pending.role)}`)}
+        <div class="choice-list">
+          <button data-action="confirm-revealed">Descartar carta</button>
         </div>
       </div>
     `;
@@ -1500,6 +1619,57 @@ function renderResponsePrompt(state, me) {
     `;
   }
   return "";
+}
+
+function renderPendingNotice(state, me) {
+  const pending = state.pending;
+  if (!pending) return "";
+  if (pending.type === "claim_proof" && pending.playerId !== me.id) {
+    return `
+      <div class="prompt">
+        <strong>${escapeHtml(`${playerLabel(state, pending.playerId)} precisa mostrar ${roleLabel(pending.role)}.`)}</strong>
+      </div>
+    `;
+  }
+  if (pending.type === "claim_replace" && pending.playerId !== me.id) {
+    return `
+      <div class="prompt">
+        <strong>${escapeHtml(`${playerLabel(state, pending.playerId)} mostrou ${roleLabel(pending.role)} e vai comprar uma carta nova.`)}</strong>
+        ${renderShownCard(pending.role, `Carta mostrada por ${playerLabel(state, pending.playerId)}`)}
+      </div>
+    `;
+  }
+  if (pending.type === "reveal" && pending.playerId !== me.id) {
+    return `
+      <div class="prompt">
+        <strong>${escapeHtml(pending.reason?.bannerText || `${playerLabel(state, pending.playerId)} precisa revelar 1 influência.`)}</strong>
+      </div>
+    `;
+  }
+  if (pending.type === "discard_revealed" && pending.playerId !== me.id) {
+    return `
+      <div class="prompt">
+        <strong>${escapeHtml(`${playerLabel(state, pending.playerId)} revelou ${roleLabel(pending.role)} e vai descartar essa carta.`)}</strong>
+        ${renderShownCard(pending.role, `Carta revelada por ${playerLabel(state, pending.playerId)}`)}
+      </div>
+    `;
+  }
+  return "";
+}
+
+function renderShownCard(role, alt) {
+  const info = ROLE_INFO[role];
+  if (!info) return "";
+  return `
+    <div class="reveal-stage">
+      <div class="cards cards--center">
+        <div class="card">
+          <img src="${info.asset}" alt="${escapeHtml(alt || info.label)}" />
+          <div class="card__tag">${escapeHtml(info.label)}</div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function onDocumentSubmit(event) {
@@ -1569,6 +1739,14 @@ function onDocumentClick(event) {
   }
   if (action === "pass") {
     game.post({ $: "pass", playerId: session.playerId });
+    return;
+  }
+  if (action === "show-claimed-role") {
+    game.post({ $: "show_claimed_role", playerId: session.playerId });
+    return;
+  }
+  if (action === "confirm-revealed") {
+    game.post({ $: "confirm_revealed", playerId: session.playerId });
     return;
   }
   if (action === "investigate-keep") {

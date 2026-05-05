@@ -245,6 +245,10 @@ input {
   flex-wrap: wrap;
 }
 
+.cards--center {
+  justify-content: center;
+}
+
 .card {
   width: 86px;
   aspect-ratio: var(--card-ratio);
@@ -307,6 +311,11 @@ input {
   padding: 14px;
   display: grid;
   gap: 10px;
+}
+
+.reveal-stage {
+  display: grid;
+  justify-items: center;
 }
 
 .action-list {
