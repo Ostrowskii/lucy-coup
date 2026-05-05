@@ -190,13 +190,6 @@ input {
   gap: 12px;
 }
 
-.phase-banner {
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: rgba(84, 53, 17, 0.08);
-  font-size: 0.94rem;
-}
-
 .player-grid {
   grid-template-columns: 1fr;
 }

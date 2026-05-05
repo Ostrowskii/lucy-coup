@@ -1201,7 +1201,6 @@ function renderBoard(state, me) {
 
   return `
     <section class="panel board">
-      <div class="phase-banner">${escapeHtml(getPromptText(state, me.id))}</div>
       <div class="player-grid">${players}</div>
     </section>
     ${renderActionPanel(state, me)}
@@ -1436,34 +1435,6 @@ function renderResponsePrompt(state, me) {
     `;
   }
   return "";
-}
-
-function getPromptText(state, myId) {
-  if (state.phase !== "in_game") return "Esperando a rodada começar.";
-  if (state.pending?.type === "reveal") {
-    return state.pending.reason?.bannerText || `${playerLabel(state, state.pending.playerId)} precisa descartar 1 influência.`;
-  }
-  if (state.pending?.type === "exchange") {
-    return `${playerLabel(state, state.pending.playerId)} está escolhendo cartas.`;
-  }
-  if (state.pending?.type === "investigate") {
-    if (state.pending.actorId === myId) {
-      const target = state.players[state.pending.targetId];
-      return `Você está investigando ${target ? target.name : "alguém"}.`;
-    }
-    return `${playerLabel(state, state.pending.actorId)} está investigando ${playerLabel(state, state.pending.targetId)}.`;
-  }
-  if (state.pending?.type === "challenge_action") {
-    return describeActionClaim(state, state.pending.actionCtx, state.pending.role);
-  }
-  if (state.pending?.type === "block_choice") {
-    return `Janela de bloqueio aberta.`;
-  }
-  if (state.pending?.type === "challenge_block") {
-    return describeBlockClaim(state, state.pending.blockerId, state.pending.role, state.pending.actionCtx);
-  }
-  if (state.currentPlayerId === myId) return "Seu turno.";
-  return `Turno de ${playerLabel(state, state.currentPlayerId)}.`;
 }
 
 function onDocumentSubmit(event) {
