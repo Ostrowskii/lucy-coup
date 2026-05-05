@@ -11,6 +11,7 @@ const STORAGE_NAME = "lucy-coup-name";
 const STORAGE_ID = "lucy-coup-player-id";
 const STORAGE_SEED = "lucy-coup-seed";
 const STARTING_COINS = 2;
+const COIN_ASSET = "./assets/lucycurrency%20(1).png";
 
 const ROLE_INFO = {
   duke: { label: "Duque", asset: "./assets/duque.jpeg" },
@@ -18,6 +19,7 @@ const ROLE_INFO = {
   captain: { label: "Captao", asset: "./assets/captao.jpeg" },
   ambassador: { label: "Embaixador", asset: "./assets/embaixador.jpeg" },
   contessa: { label: "Condexxa", asset: "./assets/condexxa.jpeg" },
+  inquisitor: { label: "Inquisidor", asset: "./assets/Inquisidor.jpeg" },
 };
 
 const ACTION_INFO = {
@@ -1100,7 +1102,10 @@ function renderPlayerCard(player, state, myId) {
       <div class="row">
         <div class="coins">
           <span>${player.coins}</span>
-          <div class="coin-stack">${Array.from({ length: Math.min(player.coins, 10) }, () => '<span class="coin"></span>').join("")}</div>
+          <div class="coin-stack">${Array.from(
+            { length: Math.min(player.coins, 10) },
+            () => `<img class="coin-token" src="${COIN_ASSET}" alt="Lucy currency" />`,
+          ).join("")}</div>
         </div>
         <div class="small">${hiddenCards.length} influência</div>
       </div>
