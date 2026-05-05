@@ -33,6 +33,8 @@ const ACTION_INFO = {
   coup: { label: "Golpe", text: "Custa 7 moedas", needsTarget: true, cost: 7 },
 };
 
+const ACTION_ORDER = ["income", "foreign_aid", "tax", "steal", "assassinate", "coup", "exchange", "investigate"];
+
 const POST_PACKER = {
   $: "Union",
   variants: {
@@ -1270,9 +1272,10 @@ function renderActionPrompt(state, me) {
   if (state.currentPlayerId !== me.id || state.pending) return "";
   const opponents = getAliveConnectedIds(state).filter((playerId) => playerId !== me.id);
   const forceCoup = me.coins >= 10;
-  const actions = Object.entries(ACTION_INFO)
-    .filter(([key]) => !forceCoup || key === "coup")
-    .map(([key, info]) => {
+  const actions = ACTION_ORDER
+    .filter((key) => !forceCoup || key === "coup")
+    .map((key) => {
+      const info = ACTION_INFO[key];
       const disabled =
         (info.cost || 0) > me.coins ||
         (!!info.needsTarget && opponents.length === 0);
@@ -1283,7 +1286,10 @@ function renderActionPrompt(state, me) {
           data-value="${key}"
           ${disabled ? "disabled" : ""}
         >
-          <span>${escapeHtml(info.label)}</span>
+          <span class="action-button__title">
+            <span>${escapeHtml(info.label)}</span>
+            ${info.role ? `<span class="action-button__role">${escapeHtml(roleLabel(info.role))}</span>` : ""}
+          </span>
           <span>${escapeHtml(info.text)}</span>
         </button>
       `;
