@@ -575,6 +575,7 @@ function resolveActionChallenge(state, challengerId) {
   const pending = state.pending;
   if (!pending || pending.type !== "challenge_action") return state;
   const actor = state.players[pending.actionCtx.actorId];
+  const challenger = state.players[challengerId];
   if (!actor) return { ...state, pending: null };
   if (playerHasRole(actor, pending.role)) {
     let next = replaceClaimedRole({ ...state, pending: null }, actor.id, pending.role);
@@ -588,11 +589,14 @@ function resolveActionChallenge(state, challengerId) {
       actionCtx: pending.actionCtx,
     });
   }
-  let next = pushLog({ ...state, pending: null }, `${actor.name} blefou sobre ${roleLabel(pending.role)}.`);
+  let next = pushLog(
+    { ...state, pending: null },
+    `${actor.name} blefou que tinha ${roleLabel(pending.role)} e ${challenger ? challenger.name : "alguém"} pegou a mentira.`,
+  );
   return beginReveal(next, actor.id, {
-    promptTitle: `Seu blefe de ${roleLabel(pending.role)} foi pego. Escolha qual influência descartar.`,
-    bannerText: `${actor.name} blefou sobre ${roleLabel(pending.role)} e precisa descartar 1 influência.`,
-    discardText: `${actor.name} perdeu o desafio por blefar sobre ${roleLabel(pending.role)}.`,
+    promptTitle: `Você blefou que tinha ${roleLabel(pending.role)} e ${challenger ? challenger.name : "alguém"} duvidou de você. Escolha qual influência descartar.`,
+    bannerText: `${actor.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira. Precisa descartar 1 influência.`,
+    discardText: `${actor.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira.`,
   }, {
     type: "end_turn",
   });
@@ -602,6 +606,7 @@ function resolveBlockChallenge(state, challengerId) {
   const pending = state.pending;
   if (!pending || pending.type !== "challenge_block") return state;
   const blocker = state.players[pending.blockerId];
+  const challenger = state.players[challengerId];
   if (!blocker) return { ...state, pending: null };
   if (playerHasRole(blocker, pending.role)) {
     let next = replaceClaimedRole({ ...state, pending: null }, blocker.id, pending.role);
@@ -614,11 +619,14 @@ function resolveBlockChallenge(state, challengerId) {
       type: "end_turn",
     });
   }
-  let next = pushLog({ ...state, pending: null }, `${blocker.name} blefou no bloqueio com ${roleLabel(pending.role)}.`);
+  let next = pushLog(
+    { ...state, pending: null },
+    `${blocker.name} blefou que tinha ${roleLabel(pending.role)} para bloquear e ${challenger ? challenger.name : "alguém"} pegou a mentira.`,
+  );
   return beginReveal(next, blocker.id, {
-    promptTitle: `Seu bloqueio com ${roleLabel(pending.role)} foi desafiado com sucesso. Escolha qual influência descartar.`,
-    bannerText: `${blocker.name} blefou no bloqueio com ${roleLabel(pending.role)} e precisa descartar 1 influência.`,
-    discardText: `${blocker.name} perdeu o desafio do bloqueio.`,
+    promptTitle: `Você blefou que tinha ${roleLabel(pending.role)} e ${challenger ? challenger.name : "alguém"} duvidou de você. Escolha qual influência descartar.`,
+    bannerText: `${blocker.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira. Precisa descartar 1 influência.`,
+    discardText: `${blocker.name} blefou que tinha ${roleLabel(pending.role)} e foi pego na mentira.`,
   }, {
     type: "resolve_action",
     actionCtx: pending.actionCtx,
