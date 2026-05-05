@@ -1,6 +1,7 @@
 import { VibiNet } from "./vendor/vibinet.mjs";
 
 const ROOM = "lucyana";
+const SERVER = "wss://net.vibistudiotest.site";
 const MAX_PLAYERS = 3;
 const TICK_RATE = 6;
 const TOLERANCE = 400;
@@ -135,6 +136,7 @@ const session = {
   exchangeSelection: [],
   currentState: INITIAL_STATE,
   renderStateRef: null,
+  lastMarkup: "",
   lastUiKey: "",
   seedPosted: "",
   joinSubmitted: false,
@@ -142,6 +144,7 @@ const session = {
 };
 
 const game = new VibiNet.game({
+  server: SERVER,
   room: ROOM,
   initial: INITIAL_STATE,
   on_tick,
@@ -164,7 +167,8 @@ document.addEventListener("submit", onDocumentSubmit);
 document.addEventListener("change", onDocumentChange);
 document.addEventListener("input", onDocumentInput);
 
-root.innerHTML = renderApp(session.currentState);
+session.lastMarkup = renderApp(session.currentState);
+root.innerHTML = session.lastMarkup;
 requestAnimationFrame(renderLoop);
 
 function on_tick(state) {
@@ -908,15 +912,38 @@ function renderLoop() {
     session.selectedAction,
     session.selectedTargetId,
     session.exchangeSelection.join(","),
-    session.nameDraft,
-    session.seedDraft,
   ].join("|");
-  if (session.renderStateRef !== nextState || session.lastUiKey !== uiKey) {
+  const markup = renderApp(nextState);
+  if (session.lastMarkup !== markup || session.lastUiKey !== uiKey) {
+    const focusSnapshot = getFocusSnapshot();
     session.renderStateRef = nextState;
+    session.lastMarkup = markup;
     session.lastUiKey = uiKey;
-    root.innerHTML = renderApp(nextState);
+    root.innerHTML = markup;
+    restoreFocusSnapshot(focusSnapshot);
   }
   requestAnimationFrame(renderLoop);
+}
+
+function getFocusSnapshot() {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLInputElement) && !(active instanceof HTMLTextAreaElement)) return null;
+  if (!root.contains(active)) return null;
+  return {
+    name: active.name,
+    selectionStart: active.selectionStart,
+    selectionEnd: active.selectionEnd,
+  };
+}
+
+function restoreFocusSnapshot(snapshot) {
+  if (!snapshot?.name) return;
+  const next = root.querySelector(`[name="${CSS.escape(snapshot.name)}"]`);
+  if (!(next instanceof HTMLInputElement) && !(next instanceof HTMLTextAreaElement)) return;
+  next.focus({ preventScroll: true });
+  if (typeof snapshot.selectionStart === "number" && typeof snapshot.selectionEnd === "number") {
+    next.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+  }
 }
 
 function renderApp(state) {
