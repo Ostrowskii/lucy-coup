@@ -15,10 +15,10 @@ const COIN_ASSET = "./assets/lucycurrency%20(1).png";
 
 const ROLE_INFO = {
   duke: { label: "Duque", asset: "./assets/duque.jpeg" },
-  assassin: { label: "Axxaxino", asset: "./assets/axxaxino.jpeg" },
-  captain: { label: "Captao", asset: "./assets/captao.jpeg" },
+  assassin: { label: "Assassino", asset: "./assets/axxaxino.jpeg" },
+  captain: { label: "Capitão", asset: "./assets/captao.jpeg" },
   ambassador: { label: "Embaixador", asset: "./assets/embaixador.jpeg" },
-  contessa: { label: "Condexxa", asset: "./assets/condexxa.jpeg" },
+  contessa: { label: "Condessa", asset: "./assets/condexxa.jpeg" },
   inquisitor: { label: "Inquisidor", asset: "./assets/Inquisidor.jpeg" },
 };
 
@@ -26,8 +26,8 @@ const ACTION_INFO = {
   income: { label: "Renda", text: "+1 moeda" },
   foreign_aid: { label: "Ajuda externa", text: "+2 moedas" },
   tax: { label: "Imposto", text: "Duque: +3 moedas", role: "duke" },
-  steal: { label: "Roubar", text: "Captao: pega 2", role: "captain", needsTarget: true },
-  assassinate: { label: "Axxaxinar", text: "Axxaxino: custa 3", role: "assassin", needsTarget: true, cost: 3 },
+  steal: { label: "Roubar", text: "Capitão: pega 2", role: "captain", needsTarget: true },
+  assassinate: { label: "Assassinar", text: "Assassino: custa 3", role: "assassin", needsTarget: true, cost: 3 },
   exchange: { label: "Trocar", text: "Embaixador: compra 2", role: "ambassador" },
   coup: { label: "Golpe", text: "Custa 7 moedas", needsTarget: true, cost: 7 },
 };
