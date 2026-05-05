@@ -1019,11 +1019,7 @@ function renderApp(state) {
     <button class="help-button" data-action="open-help" aria-label="Abrir manual">?</button>
     <div class="screen">
       <header class="topbar">
-        <div class="topbar__title">
-          <p class="eyebrow">Sala fixa</p>
-          <h1 class="title">coup</h1>
-        </div>
-        <div class="pill ${state.phase === "in_game" ? "good" : ""}">${phaseText(state)}</div>
+        <h1 class="title">Siga o manuel -&gt;</h1>
       </header>
 
       ${
@@ -1093,18 +1089,6 @@ function renderLobby(state, me, hostId) {
               <span class="pill ${player.ready ? "good" : ""}">${player.ready ? "pronto" : "esperando"}</span>
             </div>
           </div>
-          ${
-            playerId === me.id
-              ? `
-                <div class="row">
-                  <div class="small">${state.phase === "game_over" && state.winnerId ? `${escapeHtml(playerLabel(state, state.winnerId))} venceu.` : ""}</div>
-                  <button class="${me.ready ? "secondary" : ""}" data-action="toggle-ready">
-                    ${me.ready ? "Cancelar pronto" : state.phase === "game_over" ? "Pronto p/ replay" : "Ficar pronto"}
-                  </button>
-                </div>
-              `
-              : ""
-          }
         </div>
       `;
     })
@@ -1116,7 +1100,11 @@ function renderLobby(state, me, hostId) {
         <div class="small">${getConnectedLobbyIds(state).length}/${MAX_PLAYERS}</div>
       </div>
       <div class="lobby-list">${players || '<div class="empty">Sem jogadores.</div>'}</div>
+      ${state.phase === "game_over" && state.winnerId ? `<div class="small">${escapeHtml(playerLabel(state, state.winnerId))} venceu.</div>` : ""}
     </section>
+    <div class="bottom-cta">
+      <button class="${me.ready ? "secondary" : ""}" data-action="toggle-ready">Pronto</button>
+    </div>
   `;
 }
 
@@ -1348,13 +1336,6 @@ function renderResponsePrompt(state, me) {
     `;
   }
   return "";
-}
-
-function phaseText(state) {
-  if (state.phase === "lobby") return "lobby";
-  if (state.phase === "in_game") return "jogo";
-  if (state.phase === "game_over") return "fim";
-  return state.phase;
 }
 
 function getPromptText(state, myId) {
