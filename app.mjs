@@ -164,7 +164,6 @@ game.on_sync(() => {
 
 document.addEventListener("click", onDocumentClick);
 document.addEventListener("submit", onDocumentSubmit);
-document.addEventListener("change", onDocumentChange);
 document.addEventListener("input", onDocumentInput);
 
 session.lastMarkup = renderApp(session.currentState);
@@ -1010,17 +1009,7 @@ function renderApp(state) {
 
 function renderJoined(state, me, hostId) {
   if (state.phase === "lobby" || state.phase === "game_over") {
-    return `
-      <section class="panel">
-        <h2>${state.phase === "game_over" ? "Fim de rodada" : "Lobby"}</h2>
-        <p class="small">${
-          state.phase === "game_over" && state.winnerId
-            ? `${playerLabel(state, state.winnerId)} venceu.`
-            : "Quando todos estiverem prontos, começa sozinho."
-        }</p>
-      </section>
-      ${renderLobby(state, me, hostId)}
-    `;
+    return renderLobby(state, me, hostId);
   }
   return renderBoard(state, me);
 }
@@ -1034,55 +1023,34 @@ function renderLobby(state, me, hostId) {
           <div class="lobby-item__top">
             <strong>P${index + 1} · ${escapeHtml(player.name)}</strong>
             <div class="row">
+              ${playerId === me.id ? '<span class="pill good">você</span>' : ""}
               ${playerId === hostId ? '<span class="pill">host</span>' : ""}
               <span class="pill ${player.ready ? "good" : ""}">${player.ready ? "pronto" : "esperando"}</span>
             </div>
           </div>
+          ${
+            playerId === me.id
+              ? `
+                <div class="row">
+                  <div class="small">${state.phase === "game_over" && state.winnerId ? `${escapeHtml(playerLabel(state, state.winnerId))} venceu.` : ""}</div>
+                  <button class="${me.ready ? "secondary" : ""}" data-action="toggle-ready">
+                    ${me.ready ? "Cancelar pronto" : state.phase === "game_over" ? "Pronto p/ replay" : "Ficar pronto"}
+                  </button>
+                </div>
+              `
+              : ""
+          }
         </div>
       `;
     })
     .join("");
-
-  const isHost = me.id === hostId;
   return `
     <section class="panel">
       <div class="row">
-        <div>
-          <div class="section-title">Jogadores</div>
-          <div class="small">${getConnectedLobbyIds(state).length}/${MAX_PLAYERS}</div>
-        </div>
-        <button class="${me.ready ? "secondary" : ""}" data-action="toggle-ready">
-          ${me.ready ? "Cancelar pronto" : state.phase === "game_over" ? "Pronto p/ replay" : "Ficar pronto"}
-        </button>
+        <div class="section-title">Jogadores</div>
+        <div class="small">${getConnectedLobbyIds(state).length}/${MAX_PLAYERS}</div>
       </div>
       <div class="lobby-list">${players || '<div class="empty">Sem jogadores.</div>'}</div>
-      ${
-        isHost
-          ? `
-            <div class="seed-box">
-              <label for="seed-input">Seed do host</label>
-              <input
-                id="seed-input"
-                name="seed"
-                type="password"
-                value="${escapeHtml(session.seedDraft)}"
-                maxlength="64"
-                autocomplete="off"
-              />
-              <div class="small">Vai para todos, mas não aparece na UI.</div>
-            </div>
-          `
-          : `
-            <div class="seed-box">
-              <div class="section-title">Embaralhamento</div>
-              <div class="small">${state.seed ? "definido pelo host" : "aguardando host"}</div>
-            </div>
-          `
-      }
-    </section>
-    <section class="panel">
-      <div class="section-title">Log</div>
-      <div class="log-list">${renderLog(state.log)}</div>
     </section>
   `;
 }
@@ -1100,10 +1068,6 @@ function renderBoard(state, me) {
       <div class="player-grid">${players}</div>
     </section>
     ${renderActionPanel(state, me)}
-    <section class="panel">
-      <div class="section-title">Log</div>
-      <div class="log-list">${renderLog(state.log)}</div>
-    </section>
   `;
 }
 
@@ -1321,10 +1285,6 @@ function renderResponsePrompt(state, me) {
   return "";
 }
 
-function renderLog(log) {
-  return log.map((item) => `<div class="log-item">${escapeHtml(item)}</div>`).join("");
-}
-
 function phaseText(state) {
   if (state.phase === "lobby") return "lobby";
   if (state.phase === "in_game") return "jogo";
@@ -1456,13 +1416,6 @@ function onDocumentClick(event) {
     });
     session.exchangeSelection = [];
   }
-}
-
-function onDocumentChange(event) {
-  if (event.target.name !== "seed") return;
-  session.seedDraft = String(event.target.value || "").slice(0, 64);
-  localStorage.setItem(STORAGE_SEED, session.seedDraft);
-  postSeed();
 }
 
 function onDocumentInput(event) {
