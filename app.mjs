@@ -28,7 +28,8 @@ const ACTION_INFO = {
   tax: { label: "Imposto", text: "Duque: +3 moedas", role: "duke" },
   steal: { label: "Roubar", text: "Capitão: pega 2", role: "captain", needsTarget: true },
   assassinate: { label: "Assassinar", text: "Assassino: custa 3", role: "assassin", needsTarget: true, cost: 3 },
-  exchange: { label: "Trocar", text: "Embaixador: compra 2", role: "ambassador" },
+  exchange: { label: "Trocar", text: "Inquisidor: pega 1 e devolve 1", role: "inquisitor" },
+  investigate: { label: "Investigar", text: "Inquisidor: olha 1 carta", role: "inquisitor", needsTarget: true },
   coup: { label: "Golpe", text: "Custa 7 moedas", needsTarget: true, cost: 7 },
 };
 
@@ -103,6 +104,13 @@ const POST_PACKER = {
         playerId: { $: "String" },
         keepA: { $: "Nat" },
         keepB: { $: "Nat" },
+      },
+    },
+    investigate_decision: {
+      $: "Struct",
+      fields: {
+        playerId: { $: "String" },
+        force: { $: "Nat" },
       },
     },
   },
@@ -204,6 +212,8 @@ function on_post(post, state) {
       return handleReveal(state, post.playerId, post.cardId);
     case "exchange":
       return handleExchange(state, post.playerId, post.keepA, post.keepB);
+    case "investigate_decision":
+      return handleInvestigateDecision(state, post.playerId, !!post.force);
     default:
       return state;
   }
@@ -315,10 +325,12 @@ function handleChallenge(state, playerId) {
   if (!player || !player.connected || !player.inMatch || getHiddenCards(player).length === 0) return state;
   if (state.pending.type === "challenge_action") {
     if (!state.pending.eligibleIds.includes(playerId)) return state;
+    if (state.pending.passedIds.includes(playerId)) return state;
     return resolveActionChallenge(state, playerId);
   }
   if (state.pending.type === "challenge_block") {
     if (!state.pending.eligibleIds.includes(playerId)) return state;
+    if (state.pending.passedIds.includes(playerId)) return state;
     return resolveBlockChallenge(state, playerId);
   }
   return state;
@@ -345,6 +357,7 @@ function handlePass(state, playerId) {
 function handleBlock(state, playerId, role) {
   if (state.phase !== "in_game" || !state.pending || state.pending.type !== "block_choice") return state;
   if (!state.pending.eligibleIds.includes(playerId)) return state;
+  if (state.pending.passedIds.includes(playerId)) return state;
   const allowedRoles = getAllowedBlocks(state.pending.actionCtx.action, state.pending.actionCtx.targetId);
   if (!allowedRoles.includes(role)) return state;
   const blocker = state.players[playerId];
@@ -396,6 +409,19 @@ function handleExchange(state, playerId, keepA, keepB) {
   let next = withPlayer({ ...state, pending: null, deck, rngCounter }, playerId, nextPlayer);
   next = pushLog(next, `${player.name} trocou cartas.`);
   return finishTurn(next);
+}
+
+function handleInvestigateDecision(state, playerId, force) {
+  if (!state.pending || state.pending.type !== "investigate" || state.pending.actorId !== playerId) return state;
+  const actor = state.players[playerId];
+  const target = state.players[state.pending.targetId];
+  if (!actor || !target) return { ...state, pending: null };
+  if (!force) {
+    const next = pushLog({ ...state, pending: null }, `${actor.name} investigou ${target.name} e não forçou troca.`);
+    return finishTurn(next);
+  }
+  const next = replaceSpecificCard({ ...state, pending: null }, target.id, state.pending.cardId);
+  return finishTurn(pushLog(next, `${actor.name} investigou ${target.name} e forçou a troca da carta vista.`));
 }
 
 function refreshConnections(state) {
@@ -495,8 +521,14 @@ function maybeResolvePending(state) {
     const player = state.players[state.pending.playerId];
     if (!player) return { ...state, pending: null };
     if (!player.connected) {
-      const pool = [...player.hand, ...state.pending.drawn].map((card) => card.id);
-      return handleExchange(state, player.id, pool[0], pool[1]);
+      const pool = [...getHiddenCards(player), ...state.pending.drawn].map((card) => card.id);
+      return handleExchange(state, player.id, pool[0], state.pending.keepCount > 1 ? pool[1] : 0);
+    }
+  }
+  if (state.pending.type === "investigate") {
+    const actor = state.players[state.pending.actorId];
+    if (!actor || !actor.connected) {
+      return finishTurn({ ...state, pending: null });
     }
   }
   return state;
@@ -648,11 +680,11 @@ function resolveActionEffect(state, actionCtx) {
       }, { type: "end_turn" });
     }
     case "exchange": {
-      const drawn = state.deck.slice(0, 2);
+      const drawn = state.deck.slice(0, 1);
       const keepCount = getHiddenCards(actor).length;
       const next = {
         ...state,
-        deck: state.deck.slice(2),
+        deck: state.deck.slice(1),
         pending: {
           type: "exchange",
           playerId: actor.id,
@@ -660,7 +692,22 @@ function resolveActionEffect(state, actionCtx) {
           keepCount,
         },
       };
-      return pushLog(next, `${actor.name} comprou 2 cartas.`);
+      return pushLog(next, `${actor.name} comprou 1 carta para trocar.`);
+    }
+    case "investigate": {
+      const target = state.players[actionCtx.targetId];
+      if (!target || !target.inMatch || getHiddenCards(target).length === 0) return finishTurn(state);
+      const card = selectInvestigatedCard(state, target.id);
+      if (!card) return finishTurn(state);
+      return {
+        ...state,
+        pending: {
+          type: "investigate",
+          actorId: actor.id,
+          targetId: target.id,
+          cardId: card.id,
+        },
+      };
     }
     case "coup": {
       const target = state.players[actionCtx.targetId];
@@ -757,6 +804,25 @@ function replaceClaimedRole(state, playerId, role) {
   return withPlayer({ ...state, deck, rngCounter }, playerId, { ...player, hand });
 }
 
+function replaceSpecificCard(state, playerId, cardId) {
+  const player = state.players[playerId];
+  if (!player) return state;
+  const hand = [...player.hand];
+  const index = hand.findIndex((card) => !card.revealed && card.id === cardId);
+  if (index === -1) return state;
+  let deck = [...state.deck];
+  let rngCounter = state.rngCounter;
+  const returned = { ...hand[index], revealed: false };
+  const inserted = insertAtRandom(deck, returned, state.seed, rngCounter);
+  deck = inserted.deck;
+  rngCounter = inserted.rngCounter;
+  const replacement = deck[0];
+  if (!replacement) return state;
+  hand[index] = { ...replacement, revealed: false };
+  deck = deck.slice(1);
+  return withPlayer({ ...state, deck, rngCounter }, playerId, { ...player, hand });
+}
+
 function withPlayer(state, playerId, player) {
   return {
     ...state,
@@ -824,7 +890,7 @@ function insertAtRandom(deck, card, seed, startCounter) {
 }
 
 function buildDeck() {
-  const roles = ["duke", "assassin", "captain", "ambassador", "contessa"];
+  const roles = ["duke", "assassin", "captain", "inquisitor", "contessa"];
   const cards = [];
   let cardId = 1;
   for (const role of roles) {
@@ -870,6 +936,14 @@ function playerHasRole(player, role) {
   return getHiddenCards(player).some((card) => card.role === role);
 }
 
+function selectInvestigatedCard(state, playerId) {
+  const player = state.players[playerId];
+  const hidden = getHiddenCards(player);
+  if (hidden.length === 0) return null;
+  const index = nextRandom(state.seed, state.rngCounter + state.turnNumber + hidden.length) % hidden.length;
+  return hidden[index];
+}
+
 function getChallengersForAction(state, actorId) {
   return state.playerOrder.filter((playerId) => {
     const player = state.players[playerId];
@@ -893,7 +967,7 @@ function getEligibleBlockers(state, actionCtx) {
 
 function getAllowedBlocks(action, targetId) {
   if (action === "foreign_aid") return ["duke"];
-  if (action === "steal") return ["captain", "ambassador"];
+  if (action === "steal") return ["captain", "inquisitor"];
   if (action === "assassinate" && targetId) return ["contessa"];
   return [];
 }
@@ -934,7 +1008,9 @@ function describeActionEffect(state, actionCtx) {
     case "assassinate":
       return `vai gastar 3 moedas para eliminar uma influência de ${target ? target.name : "alguém"}`;
     case "exchange":
-      return "vai trocar cartas com o monte";
+      return "vai pegar 1 carta e devolver 1 para o monte";
+    case "investigate":
+      return `vai investigar 1 carta de ${target ? target.name : "alguém"}`;
     default:
       return `vai usar ${ACTION_INFO[actionCtx.action]?.label.toLowerCase() || "uma ação"}`;
   }
@@ -1171,7 +1247,7 @@ function renderActionPanel(state, me) {
   return `
     <section class="panel">
       <div class="section-title">Ações</div>
-      ${responsePrompt || actionPrompt || '<div class="empty">Esperando outros jogadores.</div>'}
+      ${responsePrompt || actionPrompt || `<div class="empty">Vez de ${escapeHtml(playerLabel(state, state.currentPlayerId))}</div>`}
     </section>
   `;
 }
@@ -1248,17 +1324,19 @@ function renderResponsePrompt(state, me) {
   const pending = state.pending;
   if (!pending) return "";
   if (pending.type === "challenge_action" && pending.eligibleIds.includes(me.id)) {
+    const hasPassed = pending.passedIds.includes(me.id);
     return `
       <div class="prompt">
         <strong>${escapeHtml(describeActionClaim(state, pending.actionCtx, pending.role))}</strong>
         <div class="choice-list">
-          <button data-action="challenge">Desafiar</button>
-          <button class="secondary" data-action="pass">Passar</button>
+          <button ${hasPassed ? "disabled" : ""} data-action="challenge">Desafiar</button>
+          <button class="secondary" ${hasPassed ? "disabled" : 'data-action="pass"'}>${hasPassed ? "Você já passou" : "Passar"}</button>
         </div>
       </div>
     `;
   }
   if (pending.type === "block_choice" && pending.eligibleIds.includes(me.id)) {
+    const hasPassed = pending.passedIds.includes(me.id);
     const options = getAllowedBlocks(pending.actionCtx.action, pending.actionCtx.targetId);
     return `
       <div class="prompt">
@@ -1267,24 +1345,25 @@ function renderResponsePrompt(state, me) {
           ${options
             .map(
               (role) => `
-                <button data-action="block" data-value="${role}">
+                <button ${hasPassed ? "disabled" : ""} data-action="block" data-value="${role}">
                   Bloquear com ${escapeHtml(roleLabel(role))}
                 </button>
               `,
             )
             .join("")}
-          <button class="secondary" data-action="pass">Não bloquear</button>
+          <button class="secondary" ${hasPassed ? "disabled" : 'data-action="pass"'}>${hasPassed ? "Você já passou" : "Não bloquear"}</button>
         </div>
       </div>
     `;
   }
   if (pending.type === "challenge_block" && pending.eligibleIds.includes(me.id)) {
+    const hasPassed = pending.passedIds.includes(me.id);
     return `
       <div class="prompt">
         <strong>${escapeHtml(describeBlockClaim(state, pending.blockerId, pending.role, pending.actionCtx))}</strong>
         <div class="choice-list">
-          <button data-action="challenge">Desafiar bloqueio</button>
-          <button class="secondary" data-action="pass">Passar</button>
+          <button ${hasPassed ? "disabled" : ""} data-action="challenge">Desafiar bloqueio</button>
+          <button class="secondary" ${hasPassed ? "disabled" : 'data-action="pass"'}>${hasPassed ? "Você já passou" : "Passar"}</button>
         </div>
       </div>
     `;
@@ -1335,6 +1414,19 @@ function renderResponsePrompt(state, me) {
       </div>
     `;
   }
+  if (pending.type === "investigate" && pending.actorId === me.id) {
+    const target = state.players[pending.targetId];
+    const card = target?.hand.find((entry) => entry.id === pending.cardId);
+    return `
+      <div class="prompt">
+        <strong>Você viu ${escapeHtml(roleLabel(card?.role || "uma carta"))} de ${escapeHtml(target?.name || "alguém")}.</strong>
+        <div class="choice-list">
+          <button class="secondary" data-action="investigate-keep">Não forçar troca</button>
+          <button data-action="investigate-force">Obrigar troca</button>
+        </div>
+      </div>
+    `;
+  }
   return "";
 }
 
@@ -1345,6 +1437,13 @@ function getPromptText(state, myId) {
   }
   if (state.pending?.type === "exchange") {
     return `${playerLabel(state, state.pending.playerId)} está escolhendo cartas.`;
+  }
+  if (state.pending?.type === "investigate") {
+    if (state.pending.actorId === myId) {
+      const target = state.players[state.pending.targetId];
+      return `Você está investigando ${target ? target.name : "alguém"}.`;
+    }
+    return `${playerLabel(state, state.pending.actorId)} está investigando ${playerLabel(state, state.pending.targetId)}.`;
   }
   if (state.pending?.type === "challenge_action") {
     return describeActionClaim(state, state.pending.actionCtx, state.pending.role);
@@ -1426,6 +1525,14 @@ function onDocumentClick(event) {
   }
   if (action === "pass") {
     game.post({ $: "pass", playerId: session.playerId });
+    return;
+  }
+  if (action === "investigate-keep") {
+    game.post({ $: "investigate_decision", playerId: session.playerId, force: 0 });
+    return;
+  }
+  if (action === "investigate-force") {
+    game.post({ $: "investigate_decision", playerId: session.playerId, force: 1 });
     return;
   }
   if (action === "block") {
