@@ -1,6 +1,6 @@
 import { VibiNet } from "./vendor/vibinet.mjs";
 
-const ROOM = "lucyana";
+const ROOM = "coup";
 const SERVER = "wss://net.vibistudiotest.site";
 const MAX_PLAYERS = 3;
 const TICK_RATE = 6;
@@ -120,7 +120,7 @@ const INITIAL_STATE = {
   turnNumber: 0,
   pending: null,
   deck: [],
-  log: ["Sala lucyana pronta."],
+  log: ["Sala coup pronta."],
   winnerId: "",
 };
 
@@ -417,7 +417,7 @@ function maybeStartRound(state) {
   const activeIds = getConnectedLobbyIds(state);
   if (activeIds.length < 2) return state;
   if (!activeIds.every((playerId) => state.players[playerId]?.ready)) return state;
-  const seed = state.seed || "lucyana";
+  const seed = state.seed || "coup";
   const cards = buildDeck();
   const shuffled = shuffleDeck(cards, seed, state.rngCounter);
   let deck = shuffled.deck;
@@ -959,7 +959,7 @@ function renderApp(state) {
       <header class="topbar">
         <div class="topbar__title">
           <p class="eyebrow">Sala fixa</p>
-          <h1 class="title">lucyana</h1>
+          <h1 class="title">coup</h1>
         </div>
         <div class="pill ${state.phase === "in_game" ? "good" : ""}">${phaseText(state)}</div>
       </header>
@@ -980,7 +980,7 @@ function renderApp(state) {
                   autocomplete="nickname"
                   value="${escapeHtml(session.nameDraft)}"
                 />
-                <button type="submit">Entrar na lucyana</button>
+                <button type="submit">Entrar na coup</button>
               </form>
             </section>
           `
