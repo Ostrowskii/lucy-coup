@@ -1195,24 +1195,31 @@ function renderLobby(state, me, hostId) {
 function renderBoard(state, me) {
   const players = state.playerOrder
     .map((playerId) => state.players[playerId])
-    .filter((player) => player && player.inMatch)
+    .filter((player) => player && player.inMatch);
+  const activePlayers = players
+    .filter((player) => getHiddenCards(player).length > 0)
     .map((player) => renderPlayerCard(player, state, me.id))
+    .join("");
+  const outPlayers = players
+    .filter((player) => getHiddenCards(player).length === 0)
+    .map((player) => renderPlayerCard(player, state, me.id, true))
     .join("");
 
   return `
     <section class="panel board">
-      <div class="player-grid">${players}</div>
+      ${outPlayers ? `<div class="player-strip">${outPlayers}</div>` : ""}
+      <div class="player-grid">${activePlayers}</div>
     </section>
     ${renderActionPanel(state, me)}
   `;
 }
 
-function renderPlayerCard(player, state, myId) {
+function renderPlayerCard(player, state, myId, compact = false) {
   const hiddenCards = getHiddenCards(player);
   const isMe = player.id === myId;
-  const cards = player.hand
+  const cards = hiddenCards
     .map((card) => {
-      const visible = isMe || card.revealed;
+      const visible = isMe;
       const info = ROLE_INFO[card.role];
       return `
         <div class="card ${visible ? "" : "card--hidden"}">
@@ -1225,7 +1232,7 @@ function renderPlayerCard(player, state, myId) {
   return `
     <article class="player-card ${player.id === state.currentPlayerId ? "is-turn" : ""} ${isMe ? "is-me" : ""} ${
       hiddenCards.length === 0 ? "is-out" : ""
-    }">
+    } ${compact ? "is-compact" : ""}">
       <div class="player-card__top">
         <strong>${escapeHtml(player.name)}</strong>
         <div class="row">
@@ -1243,7 +1250,7 @@ function renderPlayerCard(player, state, myId) {
         </div>
         <div class="small">${hiddenCards.length} influência</div>
       </div>
-      <div class="cards">${cards}</div>
+      ${cards ? `<div class="cards">${cards}</div>` : ""}
     </article>
   `;
 }

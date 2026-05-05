@@ -190,6 +190,11 @@ input {
   gap: 12px;
 }
 
+.player-strip {
+  display: grid;
+  gap: 8px;
+}
+
 .player-grid {
   grid-template-columns: 1fr;
 }
@@ -204,6 +209,14 @@ input {
 
 .player-card.is-out {
   opacity: 0.66;
+}
+
+.player-card.is-compact {
+  padding: 10px 12px;
+}
+
+.player-card.is-compact .cards {
+  display: none;
 }
 
 .coins {
