@@ -130,7 +130,7 @@ const INITIAL_STATE = {
   turnNumber: 0,
   pending: null,
   deck: [],
-  log: ["Sala coup pronta."],
+  log: [],
   winnerId: "",
 };
 
@@ -786,14 +786,13 @@ function finishTurn(state, keepCurrent = false) {
   if (order.length === 0) return state;
   const currentIndex = order.indexOf(state.currentPlayerId);
   const nextId = keepCurrent || currentIndex === -1 ? order[0] : order[(currentIndex + 1) % order.length];
-  const nextPlayer = state.players[nextId];
   const next = {
     ...state,
     pending: null,
     currentPlayerId: nextId,
     turnNumber: state.turnNumber + 1,
   };
-  return pushLog(next, `Turno de ${nextPlayer.name}.`);
+  return next;
 }
 
 function replaceClaimedRole(state, playerId, role) {
@@ -841,7 +840,11 @@ function withPlayer(state, playerId, player) {
 }
 
 function pushLog(state, message) {
-  const log = [...state.log, message].slice(-14);
+  const entry = {
+    turn: state.turnNumber || 0,
+    message,
+  };
+  const log = [...state.log, entry].slice(-18);
   return { ...state, log };
 }
 
@@ -1260,12 +1263,61 @@ function renderPlayerCard(player, state, myId, compact = false) {
 function renderActionPanel(state, me) {
   const actionPrompt = renderActionPrompt(state, me);
   const responsePrompt = renderResponsePrompt(state, me);
+  const actionLog = renderActionLog(state);
   return `
     <section class="panel">
       <div class="section-title">Ações</div>
       ${responsePrompt || actionPrompt || `<div class="empty">Vez de ${escapeHtml(playerLabel(state, state.currentPlayerId))}</div>`}
+      ${actionLog}
     </section>
   `;
+}
+
+function renderActionLog(state) {
+  const groups = groupLogsByTurn(state.log);
+  if (groups.length === 0) return "";
+  return `
+    <div class="action-log">
+      <div class="section-title">Últimas ações</div>
+      <div class="log-list">
+        ${groups
+          .map(
+            (group) => `
+              <div class="log-turn">
+                <div class="log-turn__title">Turno ${group.turn}</div>
+                ${group.entries.map((entry) => `<div class="log-item">${escapeHtml(entry.message)}</div>`).join("")}
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function groupLogsByTurn(log) {
+  const normalized = log
+    .map((entry) =>
+      typeof entry === "string"
+        ? { turn: 0, message: entry }
+        : { turn: entry.turn ?? 0, message: entry.message ?? "" },
+    )
+    .filter((entry) => entry.message);
+  const groups = [];
+  for (const entry of normalized) {
+    let group = groups.find((item) => item.turn === entry.turn);
+    if (!group) {
+      group = { turn: entry.turn, entries: [] };
+      groups.push(group);
+    }
+    group.entries.push(entry);
+  }
+  return groups
+    .sort((a, b) => b.turn - a.turn)
+    .map((group) => ({
+      turn: group.turn,
+      entries: group.entries.slice(-4).reverse(),
+    }));
 }
 
 function renderActionPrompt(state, me) {
