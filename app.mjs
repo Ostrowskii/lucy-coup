@@ -128,8 +128,8 @@ const root = document.querySelector("#app");
 
 const session = {
   playerId: getStoredPlayerId(),
-  nameDraft: localStorage.getItem(STORAGE_NAME) || "",
-  seedDraft: localStorage.getItem(STORAGE_SEED) || makeSeed(),
+  nameDraft: sessionStorage.getItem(STORAGE_NAME) || "",
+  seedDraft: sessionStorage.getItem(STORAGE_SEED) || makeSeed(),
   joined: false,
   syncReady: false,
   helpOpen: false,
@@ -743,10 +743,11 @@ function pushLog(state, message) {
 }
 
 function getStoredPlayerId() {
-  let id = localStorage.getItem(STORAGE_ID);
+  let id = sessionStorage.getItem(STORAGE_ID);
   if (id) return id;
+  localStorage.removeItem(STORAGE_ID);
   id = typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `p-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  localStorage.setItem(STORAGE_ID, id);
+  sessionStorage.setItem(STORAGE_ID, id);
   return id;
 }
 
@@ -1326,7 +1327,7 @@ function onDocumentSubmit(event) {
   const name = sanitizeName(form.get("name"));
   if (!name) return;
   session.nameDraft = name;
-  localStorage.setItem(STORAGE_NAME, name);
+  sessionStorage.setItem(STORAGE_NAME, name);
   session.joined = true;
   session.joinSubmitted = true;
   ensureHeartbeat();
@@ -1426,6 +1427,7 @@ function onDocumentClick(event) {
 function onDocumentInput(event) {
   if (event.target.name === "name") {
     session.nameDraft = event.target.value;
+    sessionStorage.setItem(STORAGE_NAME, session.nameDraft);
   }
 }
 
@@ -1474,7 +1476,7 @@ function syncHostSeed(state) {
   if ((state.phase !== "lobby" && state.phase !== "game_over") || getHostPlayerId(state) !== session.playerId) return;
   if (!session.seedDraft) {
     session.seedDraft = makeSeed();
-    localStorage.setItem(STORAGE_SEED, session.seedDraft);
+    sessionStorage.setItem(STORAGE_SEED, session.seedDraft);
   }
   if (state.seed !== session.seedDraft && session.seedPosted !== session.seedDraft) {
     postSeed();
