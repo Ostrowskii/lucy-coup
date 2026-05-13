@@ -15,7 +15,7 @@ const COIN_ASSET = "./assets/lucycurrency%20(1).png";
 
 const ROLE_INFO = {
   duke: { label: "Duque", assets: ["./assets/duquesa2.png"] },
-  assassin: { label: "Assassino", assets: ["./assets/axxaxino.jpeg"] },
+  assassin: { label: "Assassino", assets: ["./assets/catassassin.png"] },
   captain: { label: "Capitão", assets: ["./assets/captao2wand.png"] },
   ambassador: { label: "Embaixador", assets: ["./assets/embaixador.jpeg"] },
   contessa: { label: "Condessa", assets: ["./assets/condessa2.png"] },
@@ -173,6 +173,7 @@ const session = {
   selectedTargetId: "",
   exchangeSelection: [],
   revealOwnCards: false,
+  cardModal: null,
   currentState: INITIAL_STATE,
   renderStateRef: null,
   lastMarkup: "",
@@ -1255,6 +1256,24 @@ function renderApp(state) {
         <button class="secondary" data-action="close-help">Fechar</button>
       </div>
     </div>
+    ${renderCardModal()}
+  `;
+}
+
+function renderCardModal() {
+  const modal = session.cardModal;
+  if (!modal) return "";
+  const info = ROLE_INFO[modal.role];
+  if (!info) return "";
+  const assetSrc = cardAsset(modal.role, modal.cardId);
+  return `
+    <div class="modal is-open">
+      <div class="modal__card">
+        <img class="modal__image" src="${assetSrc}" alt="${escapeHtml(info.label)}" />
+        <div class="section-title" style="text-align:center">${escapeHtml(info.label)}</div>
+        <button class="secondary" data-action="close-card">Fechar</button>
+      </div>
+    </div>
   `;
 }
 
@@ -1329,8 +1348,11 @@ function renderPlayerCard(player, state, myId, compact = false) {
       const visible = showOwn;
       const info = ROLE_INFO[card.role];
       const assetSrc = cardAsset(card.role, card.id);
+      const clickAttrs = visible
+        ? `data-action="open-card" data-role="${escapeHtml(card.role)}" data-card-id="${card.id}"`
+        : "";
       return `
-        <div class="card ${visible ? "" : "card--hidden"}">
+        <div class="card ${visible ? "" : "card--hidden"}" ${clickAttrs}>
           ${visible ? `<img src="${assetSrc}" alt="${escapeHtml(info.label)}" />` : ""}
           ${visible ? `<div class="card__tag">${escapeHtml(info.label)}</div>` : ""}
         </div>
@@ -1683,10 +1705,11 @@ function renderShownCard(role, cardId, alt) {
   const info = ROLE_INFO[role];
   if (!info) return "";
   const assetSrc = cardAsset(role, cardId);
+  const idAttr = typeof cardId === "number" ? cardId : "";
   return `
     <div class="reveal-stage">
       <div class="cards cards--center">
-        <div class="card">
+        <div class="card" data-action="open-card" data-role="${escapeHtml(role)}" data-card-id="${idAttr}">
           <img src="${assetSrc}" alt="${escapeHtml(alt || info.label)}" />
           <div class="card__tag">${escapeHtml(info.label)}</div>
         </div>
@@ -1721,6 +1744,17 @@ function onDocumentClick(event) {
   }
   if (action === "close-help") {
     session.helpOpen = false;
+    return;
+  }
+  if (action === "open-card") {
+    const role = button.dataset.role;
+    const cardId = Number(button.dataset.cardId);
+    if (!role) return;
+    session.cardModal = { role, cardId: Number.isFinite(cardId) ? cardId : null };
+    return;
+  }
+  if (action === "close-card") {
+    session.cardModal = null;
     return;
   }
   if (action === "retry-join") {

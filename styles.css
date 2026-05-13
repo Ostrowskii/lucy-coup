@@ -260,6 +260,10 @@ input {
   flex: 0 0 auto;
 }
 
+.card[data-action="open-card"] {
+  cursor: zoom-in;
+}
+
 .card img {
   width: 100%;
   height: 100%;
