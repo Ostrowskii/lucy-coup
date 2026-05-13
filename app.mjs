@@ -172,6 +172,7 @@ const session = {
   selectedAction: "",
   selectedTargetId: "",
   exchangeSelection: [],
+  revealOwnCards: false,
   currentState: INITIAL_STATE,
   renderStateRef: null,
   lastMarkup: "",
@@ -1322,9 +1323,10 @@ function renderBoard(state, me) {
 function renderPlayerCard(player, state, myId, compact = false) {
   const hiddenCards = getHiddenCards(player);
   const isMe = player.id === myId;
+  const showOwn = isMe && session.revealOwnCards;
   const cards = hiddenCards
     .map((card) => {
-      const visible = isMe;
+      const visible = showOwn;
       const info = ROLE_INFO[card.role];
       const assetSrc = cardAsset(card.role, card.id);
       return `
@@ -1335,6 +1337,10 @@ function renderPlayerCard(player, state, myId, compact = false) {
       `;
     })
     .join("");
+  const showHideButton =
+    isMe && hiddenCards.length > 0
+      ? `<button class="secondary" data-action="toggle-own-cards">${showOwn ? "Hide" : "Show"}</button>`
+      : "";
   return `
     <article class="player-card ${player.id === state.currentPlayerId ? "is-turn" : ""} ${isMe ? "is-me" : ""} ${
       hiddenCards.length === 0 ? "is-out" : ""
@@ -1357,6 +1363,7 @@ function renderPlayerCard(player, state, myId, compact = false) {
         <div class="small">${hiddenCards.length} influência</div>
       </div>
       ${cards ? `<div class="cards">${cards}</div>` : ""}
+      ${showHideButton}
     </article>
   `;
 }
@@ -1718,6 +1725,10 @@ function onDocumentClick(event) {
   }
   if (action === "retry-join") {
     postJoin();
+    return;
+  }
+  if (action === "toggle-own-cards") {
+    session.revealOwnCards = !session.revealOwnCards;
     return;
   }
   if (action === "toggle-ready") {
