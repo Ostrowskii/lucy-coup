@@ -141,6 +141,12 @@ const POST_PACKER = {
         force: { $: "Nat" },
       },
     },
+    forfeit: {
+      $: "Struct",
+      fields: {
+        playerId: { $: "String" },
+      },
+    },
   },
 };
 
@@ -248,6 +254,8 @@ function on_post(post, state) {
       return handleExchange(state, post.playerId, post.keepA, post.keepB);
     case "investigate_decision":
       return handleInvestigateDecision(state, post.playerId, !!post.force);
+    case "forfeit":
+      return handleForfeit(state, post.playerId);
     default:
       return state;
   }
@@ -656,6 +664,31 @@ function maybeAdvanceTurn(state) {
   const current = state.players[state.currentPlayerId];
   if (current && isTurnEligible(current)) return state;
   return finishTurn(state, true);
+}
+
+function handleForfeit(state, playerId) {
+  if (state.phase !== "in_game") return state;
+  const player = state.players[playerId];
+  if (!player || !player.inMatch) return state;
+  if (getHiddenCards(player).length === 0) return state;
+  const hand = player.hand.map((card) => ({ ...card, revealed: true }));
+  let next = withPlayer(state, playerId, { ...player, hand });
+  next = pushLog(next, `${player.name} desistiu.`);
+  if (
+    next.pending &&
+    (next.pending.playerId === playerId ||
+      next.pending.actorId === playerId ||
+      next.pending.targetId === playerId ||
+      next.pending.challengerId === playerId)
+  ) {
+    next = { ...next, pending: null };
+  }
+  const finished = maybeFinishRound(next);
+  if (finished.phase === "game_over") return finished;
+  if (finished.currentPlayerId === playerId) {
+    return finishTurn(finished);
+  }
+  return maybeAdvanceTurn(finished);
 }
 
 function maybeFinishRound(state) {
@@ -1330,12 +1363,14 @@ function renderBoard(state, me) {
     .map((player) => renderPlayerCard(player, state, me.id, true))
     .join("");
 
+  const canForfeit = me && me.inMatch && getHiddenCards(me).length > 0;
   return `
     <section class="panel board">
       ${outPlayers ? `<div class="player-strip">${outPlayers}</div>` : ""}
       <div class="player-grid">${activePlayers}</div>
     </section>
     ${renderActionPanel(state, me)}
+    ${canForfeit ? `<div class="bottom-cta"><button class="secondary" data-action="forfeit">Desistir</button></div>` : ""}
   `;
 }
 
@@ -1763,6 +1798,11 @@ function onDocumentClick(event) {
   }
   if (action === "toggle-own-cards") {
     session.revealOwnCards = !session.revealOwnCards;
+    return;
+  }
+  if (action === "forfeit") {
+    if (!window.confirm("Tem certeza que quer desistir da rodada?")) return;
+    game.post({ $: "forfeit", playerId: session.playerId });
     return;
   }
   if (action === "toggle-ready") {
