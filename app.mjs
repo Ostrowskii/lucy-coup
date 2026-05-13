@@ -141,6 +141,13 @@ const POST_PACKER = {
         force: { $: "Nat" },
       },
     },
+    investigate_pick: {
+      $: "Struct",
+      fields: {
+        playerId: { $: "String" },
+        cardId: { $: "Nat" },
+      },
+    },
     forfeit: {
       $: "Struct",
       fields: {
@@ -254,6 +261,8 @@ function on_post(post, state) {
       return handleExchange(state, post.playerId, post.keepA, post.keepB);
     case "investigate_decision":
       return handleInvestigateDecision(state, post.playerId, !!post.force);
+    case "investigate_pick":
+      return handleInvestigatePick(state, post.playerId, post.cardId);
     case "forfeit":
       return handleForfeit(state, post.playerId);
     default:
@@ -509,6 +518,23 @@ function handleExchange(state, playerId, keepA, keepB) {
   let next = withPlayer({ ...state, pending: null, deck, rngCounter }, playerId, nextPlayer);
   next = pushLog(next, `${player.name} trocou cartas.`);
   return finishTurn(next);
+}
+
+function handleInvestigatePick(state, playerId, cardId) {
+  if (!state.pending || state.pending.type !== "investigate_pick" || state.pending.actorId !== playerId) return state;
+  const target = state.players[state.pending.targetId];
+  if (!target) return { ...state, pending: null };
+  const card = target.hand.find((entry) => entry.id === cardId && !entry.revealed);
+  if (!card) return state;
+  return {
+    ...state,
+    pending: {
+      type: "investigate",
+      actorId: state.pending.actorId,
+      targetId: state.pending.targetId,
+      cardId: card.id,
+    },
+  };
 }
 
 function handleInvestigateDecision(state, playerId, force) {
@@ -859,16 +885,26 @@ function resolveActionEffect(state, actionCtx) {
     }
     case "investigate": {
       const target = state.players[actionCtx.targetId];
-      if (!target || !target.inMatch || getHiddenCards(target).length === 0) return finishTurn(state);
-      const card = selectInvestigatedCard(state, target.id);
-      if (!card) return finishTurn(state);
+      if (!target || !target.inMatch) return finishTurn(state);
+      const hidden = getHiddenCards(target);
+      if (hidden.length === 0) return finishTurn(state);
+      if (hidden.length === 1) {
+        return {
+          ...state,
+          pending: {
+            type: "investigate",
+            actorId: actor.id,
+            targetId: target.id,
+            cardId: hidden[0].id,
+          },
+        };
+      }
       return {
         ...state,
         pending: {
-          type: "investigate",
+          type: "investigate_pick",
           actorId: actor.id,
           targetId: target.id,
-          cardId: card.id,
         },
       };
     }
@@ -1082,14 +1118,6 @@ function getHiddenCards(player) {
 
 function playerHasRole(player, role) {
   return getHiddenCards(player).some((card) => card.role === role);
-}
-
-function selectInvestigatedCard(state, playerId) {
-  const player = state.players[playerId];
-  const hidden = getHiddenCards(player);
-  if (hidden.length === 0) return null;
-  const index = nextRandom(state.seed, state.rngCounter + state.turnNumber + hidden.length) % hidden.length;
-  return hidden[index];
 }
 
 function getChallengersForAction(state, actorId) {
@@ -1684,6 +1712,26 @@ function renderResponsePrompt(state, me) {
       </div>
     `;
   }
+  if (pending.type === "investigate_pick" && pending.actorId === me.id) {
+    const target = state.players[pending.targetId];
+    const hidden = target ? getHiddenCards(target) : [];
+    return `
+      <div class="prompt">
+        <strong>Escolha qual influência de ${escapeHtml(target?.name || "alguém")} investigar.</strong>
+        <div class="choice-list">
+          ${hidden
+            .map(
+              (card, index) => `
+                <button data-action="investigate-pick" data-value="${card.id}">
+                  Carta ${index + 1}
+                </button>
+              `,
+            )
+            .join("")}
+        </div>
+      </div>
+    `;
+  }
   if (pending.type === "investigate" && pending.actorId === me.id) {
     const target = state.players[pending.targetId];
     const card = target?.hand.find((entry) => entry.id === pending.cardId);
@@ -1730,6 +1778,13 @@ function renderPendingNotice(state, me) {
       <div class="prompt">
         <strong>${escapeHtml(`${playerLabel(state, pending.playerId)} revelou ${roleLabel(pending.role)} e vai descartar essa carta.`)}</strong>
         ${renderShownCard(pending.role, pending.cardId, `Carta revelada por ${playerLabel(state, pending.playerId)}`)}
+      </div>
+    `;
+  }
+  if (pending.type === "investigate_pick" && pending.actorId !== me.id) {
+    return `
+      <div class="prompt">
+        <strong>${escapeHtml(`${playerLabel(state, pending.actorId)} está escolhendo qual carta de ${playerLabel(state, pending.targetId)} investigar.`)}</strong>
       </div>
     `;
   }
@@ -1848,6 +1903,12 @@ function onDocumentClick(event) {
   }
   if (action === "confirm-revealed") {
     game.post({ $: "confirm_revealed", playerId: session.playerId });
+    return;
+  }
+  if (action === "investigate-pick") {
+    const cardId = Number(value);
+    if (!Number.isFinite(cardId)) return;
+    game.post({ $: "investigate_pick", playerId: session.playerId, cardId });
     return;
   }
   if (action === "investigate-keep") {
