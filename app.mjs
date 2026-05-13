@@ -14,13 +14,27 @@ const STARTING_COINS = 2;
 const COIN_ASSET = "./assets/lucycurrency%20(1).png";
 
 const ROLE_INFO = {
-  duke: { label: "Duque", asset: "./assets/duque.jpeg" },
-  assassin: { label: "Assassino", asset: "./assets/axxaxino.jpeg" },
-  captain: { label: "Capitão", asset: "./assets/captao.jpeg" },
-  ambassador: { label: "Embaixador", asset: "./assets/embaixador.jpeg" },
-  contessa: { label: "Condessa", asset: "./assets/condexxa.jpeg" },
-  inquisitor: { label: "Inquisidor", asset: "./assets/Inquisidor.jpeg" },
+  duke: { label: "Duque", assets: ["./assets/duquesa2.png"] },
+  assassin: { label: "Assassino", assets: ["./assets/axxaxino.jpeg"] },
+  captain: { label: "Capitão", assets: ["./assets/captao2wand.png"] },
+  ambassador: { label: "Embaixador", assets: ["./assets/embaixador.jpeg"] },
+  contessa: { label: "Condessa", assets: ["./assets/condessa2.png"] },
+  inquisitor: {
+    label: "Inquisidor",
+    assets: [
+      "./assets/catinquisitor1.png",
+      "./assets/catinquisitor2.png",
+      "./assets/catinquisitor3.png",
+    ],
+  },
 };
+
+function cardAsset(role, cardId) {
+  const assets = ROLE_INFO[role]?.assets;
+  if (!assets || assets.length === 0) return "";
+  const idx = typeof cardId === "number" ? (cardId - 1) % assets.length : 0;
+  return assets[(idx + assets.length) % assets.length];
+}
 
 const ACTION_INFO = {
   income: { label: "Renda", text: "+1 moeda" },
@@ -1312,9 +1326,10 @@ function renderPlayerCard(player, state, myId, compact = false) {
     .map((card) => {
       const visible = isMe;
       const info = ROLE_INFO[card.role];
+      const assetSrc = cardAsset(card.role, card.id);
       return `
         <div class="card ${visible ? "" : "card--hidden"}">
-          ${visible ? `<img src="${info.asset}" alt="${escapeHtml(info.label)}" />` : ""}
+          ${visible ? `<img src="${assetSrc}" alt="${escapeHtml(info.label)}" />` : ""}
           ${visible ? `<div class="card__tag">${escapeHtml(info.label)}</div>` : ""}
         </div>
       `;
@@ -1541,7 +1556,7 @@ function renderResponsePrompt(state, me) {
     return `
       <div class="prompt">
         <strong>${escapeHtml(`Todos viram seu ${roleLabel(pending.role)}. Agora compre uma carta nova.`)}</strong>
-        ${renderShownCard(pending.role, `Carta mostrada: ${roleLabel(pending.role)}`)}
+        ${renderShownCard(pending.role, pending.cardId, `Carta mostrada: ${roleLabel(pending.role)}`)}
         <div class="choice-list">
           <button data-action="confirm-revealed">Comprar carta nova</button>
         </div>
@@ -1571,7 +1586,7 @@ function renderResponsePrompt(state, me) {
     return `
       <div class="prompt">
         <strong>${escapeHtml(`Você revelou ${roleLabel(pending.role)}. Agora descarte essa carta.`)}</strong>
-        ${renderShownCard(pending.role, `Carta revelada: ${roleLabel(pending.role)}`)}
+        ${renderShownCard(pending.role, pending.cardId, `Carta revelada: ${roleLabel(pending.role)}`)}
         <div class="choice-list">
           <button data-action="confirm-revealed">Descartar carta</button>
         </div>
@@ -1635,7 +1650,7 @@ function renderPendingNotice(state, me) {
     return `
       <div class="prompt">
         <strong>${escapeHtml(`${playerLabel(state, pending.playerId)} mostrou ${roleLabel(pending.role)} e vai comprar uma carta nova.`)}</strong>
-        ${renderShownCard(pending.role, `Carta mostrada por ${playerLabel(state, pending.playerId)}`)}
+        ${renderShownCard(pending.role, pending.cardId, `Carta mostrada por ${playerLabel(state, pending.playerId)}`)}
       </div>
     `;
   }
@@ -1650,21 +1665,22 @@ function renderPendingNotice(state, me) {
     return `
       <div class="prompt">
         <strong>${escapeHtml(`${playerLabel(state, pending.playerId)} revelou ${roleLabel(pending.role)} e vai descartar essa carta.`)}</strong>
-        ${renderShownCard(pending.role, `Carta revelada por ${playerLabel(state, pending.playerId)}`)}
+        ${renderShownCard(pending.role, pending.cardId, `Carta revelada por ${playerLabel(state, pending.playerId)}`)}
       </div>
     `;
   }
   return "";
 }
 
-function renderShownCard(role, alt) {
+function renderShownCard(role, cardId, alt) {
   const info = ROLE_INFO[role];
   if (!info) return "";
+  const assetSrc = cardAsset(role, cardId);
   return `
     <div class="reveal-stage">
       <div class="cards cards--center">
         <div class="card">
-          <img src="${info.asset}" alt="${escapeHtml(alt || info.label)}" />
+          <img src="${assetSrc}" alt="${escapeHtml(alt || info.label)}" />
           <div class="card__tag">${escapeHtml(info.label)}</div>
         </div>
       </div>
