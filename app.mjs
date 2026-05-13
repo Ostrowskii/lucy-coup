@@ -1,6 +1,6 @@
 import { VibiNet } from "./vendor/vibinet.mjs";
 
-const ROOM = "coup";
+const ROOM = "coup-1";
 const SERVER = "wss://net.vibistudiotest.site";
 const MAX_PLAYERS = 3;
 const TICK_RATE = 6;
